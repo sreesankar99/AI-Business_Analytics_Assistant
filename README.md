@@ -1,76 +1,160 @@
-# AI Business Analytics Assistant — Starter Project
+# AI Business Analytics Assistant
 
-Upload a CSV or excel file, ask questions in plain English, get back tables, numbers, and charts.
+A Streamlit application that lets you upload CSV or Excel data, ask questions in plain English, and receive calculated answers, tables, and interactive Plotly charts.
 
-## What's inside
-```
-ai_business_analyst/
-├── app.py            # Streamlit UI (chat interface, file upload)
-├── core.py           # The engine: profiling, prompt building, LLM call, safe execution
-├── requirements.txt
-├── .env.example
+The application uses the **OpenRouter API** with its `openrouter/free` model router. OpenRouter provides access to available free models through an OpenAI-compatible API, so the project does not require an Anthropic API key.
+
+## Features
+
+- Upload `.csv`, `.xlsx`, and `.xls` files.
+- Select a worksheet when uploading an Excel workbook.
+- Inspect a data preview and an automatically generated data profile.
+- Ask questions in natural language through a chat interface.
+- Generate pandas and Plotly code to answer questions.
+- Display scalar answers, DataFrames, Series, and interactive charts.
+- Keep short conversation memory for follow-up questions.
+- Retry once automatically when generated analysis code fails.
+- Show generated Python code for transparency and debugging.
+- Reset conversation memory when a different dataset is uploaded.
+
+## Project structure
+
+```text
+AI-Business_Analytics_Assistant/
+├── app.py             # Streamlit interface, uploads, chat, and rendering
+├── core.py            # Profiling, prompts, OpenRouter calls, and execution
+├── requirements.txt   # Python dependencies
+├── .env.example       # Environment-variable template
 └── README.md
 ```
 
-## 1. Setup (run these on your own machine)
+## How the application works
 
-```bash
-# 1. Create the project folder and move these files into it
-mkdir ai_business_analyst && cd ai_business_analyst
-# (copy app.py, core.py, requirements.txt, .env.example here)
+1. **Upload data** – `app.py` reads a CSV or Excel worksheet into a pandas DataFrame.
+2. **Create a profile** – `profile_dataframe()` sends the model a compact description containing the shape, columns, data types, null counts, sample rows, and numeric statistics. The complete dataset is not sent to the model.
+3. **Generate analysis code** – OpenRouter is asked to produce pandas/NumPy/Plotly code using the existing `df` variable. The requested answer must be stored in `result`; charts are stored in `fig`.
+4. **Execute locally** – `safe_execute()` runs the generated code with restricted globals and a blocked-token check.
+5. **Retry errors** – If execution fails, the error is sent back to the model once so it can generate corrected code.
+6. **Render the result** – Streamlit displays tables, scalar values, and Plotly figures.
 
-# 2. Create and activate a virtual environment
-python -m venv venv
-source venv/bin/activate        # Windows: venv\Scripts\activate
+## Requirements
 
-# 3. Install dependencies
-pip install -r requirements.txt
+- Python 3.10 or newer recommended
+- An OpenRouter account and API key
+- Internet access while making model requests
 
-# 4. Add your API key
-cp .env.example .env
-# edit .env and paste your real ANTHROPIC_API_KEY
+The project uses the OpenAI Python SDK only as an API client. Requests are directed to OpenRouter with:
+
+```text
+https://openrouter.ai/api/v1
 ```
 
-Get a key from https://console.anthropic.com/ (Anthropic API, separate from a claude.ai subscription).
+## Setup
 
-## 2. Run it
+### 1. Clone the repository
+
+```bash
+git clone https://github.com/sreesankar99/AI-Business_Analytics_Assistant.git
+cd AI-Business_Analytics_Assistant
+```
+
+### 2. Create and activate a virtual environment
+
+```bash
+python -m venv .venv
+
+# macOS/Linux
+source .venv/bin/activate
+
+# Windows PowerShell
+.venv\Scripts\Activate.ps1
+```
+
+### 3. Install dependencies
+
+```bash
+pip install -r requirements.txt
+```
+
+### 4. Create an OpenRouter API key
+
+Create an account at [OpenRouter](https://openrouter.ai/), create an API key, and copy the key. The application is configured to use the free model router:
+
+```text
+openrouter/free
+```
+
+Free model availability and rate limits can change on OpenRouter. A free key may still be subject to provider limits or temporary unavailability.
+
+### 5. Configure the environment
+
+Copy the example file and add your key:
+
+```bash
+# macOS/Linux
+cp .env.example .env
+
+# Windows PowerShell
+Copy-Item .env.example .env
+```
+
+Set the value in `.env`:
+
+```dotenv
+OPENROUTER_API_KEY=your_openrouter_key_here
+```
+
+Never commit `.env` or expose your API key in the browser, source code, screenshots, or logs.
+
+## Run the application
 
 ```bash
 streamlit run app.py
 ```
 
-This opens a browser tab. Upload any CSV from the sidebar, then ask things like:
-- "What are the top 5 products by revenue?"
-- "Show me monthly sales trend as a line chart"
-- "Which region has the highest average order value?"
+Then upload a dataset from the sidebar and ask questions such as:
 
-## 3. How it works (the core loop)
+- `What are the top 5 products by revenue?`
+- `Show monthly sales as a line chart.`
+- `Which region has the highest average order value?`
+- `How many rows contain missing customer IDs?`
 
-1. **Profile the CSV** — `profile_dataframe()` builds a short text summary (columns, dtypes, sample rows, stats) instead of sending the whole file to the LLM.
-2. **Ask Claude to write code** — the profile + your question go into a strict system prompt that tells the model to write pandas/plotly code into `result` and (optionally) `fig`.
-3. **Run it safely** — `safe_execute()` runs that code with a restricted set of builtins and a blocklist for dangerous tokens (file access, subprocess, network, etc).
-4. **Auto-retry on error** — if the generated code throws an exception, the error is sent back to the model once, asking it to fix its own code.
-5. **Render** — tables via `st.dataframe`, scalars via `st.write`, charts via `st.plotly_chart`.
+Follow-up questions can refer to the recent conversation, for example: `Show that by region instead.`
 
-## 4. Known limitations (be upfront with clients about these)
+## Important security limitation
 
-- The sandbox is a **blocklist + restricted builtins**, which is good enough for a demo/trusted-user MVP, but **not** airtight isolation. Don't expose this directly to untrusted public users without hardening (see below).
-- Large CSVs (100k+ rows) will work but cost more tokens per profile/error-retry cycle — consider sampling or pre-aggregating for very large files.
-- Currently single-file, single-session (no persistent chat history across restarts).
+The generated Python code is executed in the same process as the Streamlit application. The project uses restricted builtins and a blocklist, but this is **not a secure isolation boundary**. It is suitable for a local demo or trusted users only.
 
-## 5. Hardening for a real client deployment (do before charging money)
+Before exposing the application to untrusted users, run code execution in a separate process with a timeout or, preferably, in a locked-down container with:
 
-- Run `safe_execute()` in a **separate subprocess with a timeout**, or better, inside a locked-down Docker container with no network access.
-- Add row/column limits and a max file size on upload.
-- Add authentication if this will be hosted (Streamlit doesn't have built-in auth).
-- Log every generated-code execution for auditing.
-- Consider caching profiles/answers to cut API costs on repeated questions.
+- No network access
+- Read-only or no filesystem access
+- CPU, memory, and execution-time limits
+- Authentication and authorization
+- Detailed execution auditing
 
-## 6. Natural next features (roadmap)
+Do not treat the current `safe_execute()` implementation as production-grade sandboxing.
 
-- [ ] Multi-CSV upload + joins
-- [ ] Auto-generated narrative insights (not just numbers)
-- [ ] Export conversation + charts to a PDF/PPT report
-- [ ] Excel (.xlsx) file support
-- [ ] Dockerfile + one-click deploy (Render/Railway)
-- [ ] White-label branding for client delivery
+## Current limitations
+
+- Free OpenRouter models can have rate limits, queue delays, or changing availability.
+- Very large files increase profiling and model-request costs; use sampling or pre-aggregation for large datasets.
+- Conversation memory is held only in the current Streamlit session and is lost after restart.
+- The model receives a profile and sample rows, not every row in the dataset. Some questions may therefore require a more explicit prompt or local preprocessing.
+- Generated-code execution can fail when column names, date formats, or user questions are ambiguous.
+- There is no built-in authentication, persistent storage, report export, or multi-user data isolation.
+
+## Recommended next steps
+
+- [ ] Add upload size, row-count, and column-count limits.
+- [ ] Move generated-code execution to an isolated subprocess/container.
+- [ ] Add authentication and per-user session isolation.
+- [ ] Add structured validation for generated code and result types.
+- [ ] Add multi-file uploads and joins.
+- [ ] Add narrative insights and downloadable PDF/PPT reports.
+- [ ] Add caching for profiles and repeated questions.
+- [ ] Add tests for profiling, code extraction, unsafe-token detection, and execution errors.
+
+## License
+
+No license has been declared yet. Add a license file before distributing or deploying the project publicly.
