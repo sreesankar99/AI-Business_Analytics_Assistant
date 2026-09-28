@@ -1,6 +1,6 @@
 # AI Business Analytics Assistant — Starter Project
 
-Upload a CSV, ask questions in plain English, get back tables, numbers, and charts.
+Upload a CSV or excel file, ask questions in plain English, get back tables, numbers, and charts.
 
 ## What's inside
 ```
